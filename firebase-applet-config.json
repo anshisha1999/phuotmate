@@ -1,12 +1,10 @@
 {
-  "projectId": "optimal-bounty-zn2tx",
-  "appId": "1:1073317485161:web:9ca475f81351266733a0f8",
-  "apiKey": "AIzaSyAR5sUu59ZNDCFFGgCXGRPV4ILoFwy5XJQ",
-  "authDomain": "optimal-bounty-zn2tx.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-phtmatetrlsphtai-efc88428-7929-433e-8be0-22d6d7d3217a",
-  "storageBucket": "optimal-bounty-zn2tx.firebasestorage.app",
-  "messagingSenderId": "1073317485161",
-  "measurementId": "",
-  "oAuthClientId": "1073317485161-6e1s84pnl3dbb4h4oiqoqen699nrprvj.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "phuotmate",
+  "appId": "1:389533794670:web:5a4fab2b4f5112f2bc417f",
+  "apiKey": "AIzaSyA7lQFPyYdLzSfYrDRfdF_L-5Ot7GPxPjA",
+  "authDomain": "phuotmate.firebaseapp.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "phuotmate.firebasestorage.app",
+  "messagingSenderId": "389533794670",
+  "measurementId": "G-287RHXXWMG"
 }
