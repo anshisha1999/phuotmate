@@ -22,7 +22,7 @@ import {
 import { getTripDates, getTripPermissions, isUserInActiveTrip } from './services/tripRules';
 import { calculateBalancesAndDebts } from './services/debtSimplifier';
 import { useTripDetails } from './hooks/useTripDetails';
-import { Loader2 } from 'lucide-react';
+import { Loader2, BookOpen, X } from 'lucide-react';
 
 const PENDING_INVITE_KEY = 'phuotmate_pending_invite';
 
@@ -101,6 +101,8 @@ export default function App() {
 
   // Tour đang xem: tour người dùng chọn, mặc định là tour đang chạy
   const currentTrip = trips.find((t) => t.id === currentTripId) || userActiveTrip;
+  // Đang xem lại 1 tour trong lịch sử (không phải tour đang tham gia) - chế độ chỉ xem tạm thời
+  const isViewingHistory = !!currentTrip && currentTrip.id !== userActiveTrip?.id;
   const details = useTripDetails(currentTrip?.id || null);
   const permissions = currentTrip ? getTripPermissions(currentTrip, userId) : null;
 
@@ -135,8 +137,15 @@ export default function App() {
     );
   }
 
+  // Chỉ ghi nhớ tour trong lịch sử; tour đang tham gia luôn là mặc định nên không cần lưu
   const openTrip = (tripId: string) => {
-    setCurrentTripId(tripId);
+    setCurrentTripId(tripId === userActiveTrip?.id ? '' : tripId);
+    setActiveTab('overview');
+  };
+
+  // Mở tour vừa tạo / vừa tham gia (tour này trở thành tour đang tham gia)
+  const openActiveTrip = () => {
+    setCurrentTripId('');
     setActiveTab('overview');
   };
 
@@ -148,7 +157,7 @@ export default function App() {
 
     if (userActiveTrip) {
       if (userActiveTrip.inviteCode === cleanCode) {
-        openTrip(userActiveTrip.id);
+        openActiveTrip();
         return { success: true };
       }
       return {
@@ -158,7 +167,8 @@ export default function App() {
     }
 
     try {
-      openTrip(await joinTripByCode(cleanCode, currentUser));
+      await joinTripByCode(cleanCode, currentUser);
+      openActiveTrip();
       return { success: true };
     } catch (e) {
       console.error('Lỗi khi tham gia tour:', e);
@@ -175,7 +185,8 @@ export default function App() {
       };
     }
     try {
-      openTrip(await createTrip(input, currentUser));
+      await createTrip(input, currentUser);
+      openActiveTrip();
       return { success: true };
     } catch (e) {
       console.error('Lỗi tạo tour:', e);
@@ -225,6 +236,8 @@ export default function App() {
     if (!currentTrip) return;
     try {
       await completeTrip(currentTrip);
+      // Tour vừa hoàn thành chuyển sang lịch sử: Lead tiếp tục xem lại tour này
+      setCurrentTripId(currentTrip.id);
     } catch (e) {
       showError(e, 'Không xác nhận hoàn thành được. Vui lòng thử lại!');
     }
@@ -256,6 +269,12 @@ export default function App() {
     }
   };
 
+  // Về Trang chủ = thoát chế độ xem lại; các tab quay về tour đang tham gia
+  const changeTab = (tab: TabType) => {
+    if (tab === 'home') setCurrentTripId('');
+    setActiveTab(tab);
+  };
+
   const unsettledDebtCount = calculateBalancesAndDebts(details.members, details.expenses, details.payments).settlements.length;
 
   const renderTripTab = (tab: 'overview' | 'itinerary' | 'expenses') => {
@@ -267,7 +286,7 @@ export default function App() {
           currentUserId={currentUser.id}
           onSelectPastTrip={openTrip}
           onOpenCreateTrip={() => setIsCreateTripModalOpen(true)}
-          onGoHome={() => setActiveTab('home')}
+          onGoHome={() => changeTab('home')}
         />
       );
     }
@@ -279,7 +298,7 @@ export default function App() {
           expenses={details.expenses}
           currentUser={currentUser}
           permissions={permissions}
-          onNavigateTab={setActiveTab}
+          onNavigateTab={changeTab}
           onOpenInvite={() => setIsInviteModalOpen(true)}
           onOpenAiPlanner={() => setIsAiPlannerOpen(true)}
           onOpenEditTrip={() => setIsEditTripModalOpen(true)}
@@ -321,7 +340,7 @@ export default function App() {
           currentTrip={currentTrip}
           currentUser={currentUser}
           isAtHome={activeTab === 'home'}
-          onGoHome={() => setActiveTab('home')}
+          onGoHome={() => changeTab('home')}
           onOpenProfile={() => setIsAuthModalOpen(true)}
           onOpenTripSelector={() => setIsTripSelectorOpen(true)}
           onOpenInviteModal={() => setIsInviteModalOpen(true)}
@@ -339,14 +358,33 @@ export default function App() {
               onOpenProfile={() => setIsAuthModalOpen(true)}
             />
           ) : (
-            renderTripTab(activeTab)
+            <>
+              {isViewingHistory && currentTrip && (
+                <div className="mb-3 p-2.5 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-xs text-blue-200 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BookOpen className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span className="truncate">
+                      Đang xem lại: <strong className="text-white">{currentTrip.title}</strong> (chỉ xem)
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setCurrentTripId('')}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-semibold shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Đóng</span>
+                  </button>
+                </div>
+              )}
+              {renderTripTab(activeTab)}
+            </>
           )}
         </main>
 
         {/* Bottom Navigation */}
         <BottomNav
           activeTab={activeTab}
-          onChangeTab={setActiveTab}
+          onChangeTab={changeTab}
           expenseCount={currentTrip ? details.expenses.length : 0}
         />
       </div>
