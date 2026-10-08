@@ -8,7 +8,6 @@ import { ExpenseView } from './components/expense/ExpenseView';
 import { HomeView } from './components/home/HomeView';
 import { EmptyTourView } from './components/common/EmptyTourView';
 import { CreateTripModal } from './components/trip/CreateTripModal';
-import { TripSelectorModal } from './components/trip/TripSelectorModal';
 import { InviteModal } from './components/trip/InviteModal';
 import { AiPlannerModal } from './components/itinerary/AiPlannerModal';
 import { AuthModal } from './components/auth/AuthModal';
@@ -49,7 +48,6 @@ export default function App() {
   // Modals state
   const [isCreateTripModalOpen, setIsCreateTripModalOpen] = useState(false);
   const [isEditTripModalOpen, setIsEditTripModalOpen] = useState(false);
-  const [isTripSelectorOpen, setIsTripSelectorOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isAiPlannerOpen, setIsAiPlannerOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -335,15 +333,10 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center selection:bg-orange-500 selection:text-white">
       <div className="w-full max-w-lg min-h-screen">
-        {/* Mobile Header with User info, Trip Switcher & Home Action */}
+        {/* Mobile Header with logo & user profile */}
         <MobileHeader
-          currentTrip={currentTrip}
           currentUser={currentUser}
-          isAtHome={activeTab === 'home'}
-          onGoHome={() => changeTab('home')}
           onOpenProfile={() => setIsAuthModalOpen(true)}
-          onOpenTripSelector={() => setIsTripSelectorOpen(true)}
-          onOpenInviteModal={() => setIsInviteModalOpen(true)}
         />
 
         {/* Main Content Area */}
@@ -405,17 +398,6 @@ export default function App() {
           onSubmit={handleUpdateTripInfo}
         />
       )}
-
-      <TripSelectorModal
-        trips={trips}
-        currentTripId={currentTrip ? currentTrip.id : ''}
-        currentUserId={currentUser.id}
-        isOpen={isTripSelectorOpen}
-        onClose={() => setIsTripSelectorOpen(false)}
-        onSelectTrip={openTrip}
-        onOpenCreateTrip={() => setIsCreateTripModalOpen(true)}
-        onJoinTripByCode={handleJoinTripByCode}
-      />
 
       {currentTrip && permissions && (
         <InviteModal
