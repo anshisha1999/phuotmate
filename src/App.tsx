@@ -21,6 +21,7 @@ import {
 import { getTripDates, getTripPermissions, isUserInActiveTrip } from './services/tripRules';
 import { calculateBalancesAndDebts } from './services/debtSimplifier';
 import { useTripDetails } from './hooks/useTripDetails';
+import { usePwaInstall } from './hooks/usePwaInstall';
 import { Loader2, BookOpen, X } from 'lucide-react';
 
 const PENDING_INVITE_KEY = 'phuotmate_pending_invite';
@@ -102,6 +103,7 @@ export default function App() {
   // Đang xem lại 1 tour trong lịch sử (không phải tour đang tham gia) - chế độ chỉ xem tạm thời
   const isViewingHistory = !!currentTrip && currentTrip.id !== userActiveTrip?.id;
   const details = useTripDetails(currentTrip?.id || null);
+  const installApp = usePwaInstall();
   const permissions = currentTrip ? getTripPermissions(currentTrip, userId) : null;
 
   // Tự động tham gia tour nếu người dùng truy cập từ link invite (sau khi đã tải xong danh sách tour)
@@ -337,6 +339,7 @@ export default function App() {
         <MobileHeader
           currentUser={currentUser}
           onOpenProfile={() => setIsAuthModalOpen(true)}
+          onInstallApp={installApp}
         />
 
         {/* Main Content Area */}

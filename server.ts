@@ -179,8 +179,14 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // Digital Asset Links cho bản APK (TWA) - express.static mặc định bỏ qua thư mục bắt đầu bằng dấu chấm
+    app.use('/.well-known', express.static(path.resolve(__dirname, 'dist', '.well-known')));
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
+      // File không tồn tại (vd asset cũ sau deploy mới) -> 404, không trả index.html để service worker không cache nhầm
+      if (path.extname(req.path)) {
+        return res.sendStatus(404);
+      }
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "PhượtMate - Trợ Lý & Sổ Phượt AI",
+  "short_name": "PhượtMate",
+  "description": "Ứng dụng phượt di động: Lên lịch trình AI, quản lý đoàn & chia tiền nhóm thông minh VietQR.",
+  "lang": "vi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#090d16",
+  "categories": ["travel", "finance", "lifestyle"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
