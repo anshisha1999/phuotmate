@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Hồ sơ Biker và tài khoản nhận tiền VietQR",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "vehicle": { "type": "string" },
+        "bankName": { "type": "string" },
+        "bankCode": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "accountName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "name"]
+    },
+    "Trip": {
+      "title": "Tour Phượt",
+      "description": "Chuyến đi phượt gồm lịch trình chặng, thành viên, và sổ quỹ",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "inviteCode": { "type": "string", "minLength": 6, "maxLength": 6 },
+        "departure": { "type": "string" },
+        "destination": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "defaultVehicle": { "type": "string" },
+        "vibe": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "createdBy": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "memberIds": { "type": "array" },
+        "members": { "type": "array" },
+        "days": { "type": "array" },
+        "expenses": { "type": "array" },
+        "photos": { "type": "array" },
+        "gearChecklist": { "type": "array" },
+        "vehicleAdvice": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "inviteCode", "createdBy", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Tài khoản người dùng cá nhân"
+    },
+    "/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Danh sách các chuyến đi phượt và chia tiền"
+    }
+  }
+}
