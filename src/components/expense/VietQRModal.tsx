@@ -1,17 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
+import React, { useState } from 'react';
 import { Member, DebtSettlement, Trip } from '../../types/trip';
 import { formatVND, generateVietQRUrl } from '../../services/debtSimplifier';
 import { X, Copy, Check, QrCode, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 interface VietQRModalProps {
-  settlement: DebtSettlement | null;
+  settlement: DebtSettlement;
   fromMember: Member | null;
   toMember: Member | null;
   trip: Trip;
-  isOpen: boolean;
+  canConfirm: boolean; // người trả hoặc người nhận, đang trong tour đang chạy
   onClose: () => void;
-  onToggleSettled: (fromId: string, toId: string) => void;
+  onConfirmPaid: (settlement: DebtSettlement) => void;
 }
 
 export const VietQRModal: React.FC<VietQRModalProps> = ({
@@ -19,17 +18,16 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
   fromMember,
   toMember,
   trip,
-  isOpen,
+  canConfirm,
   onClose,
-  onToggleSettled,
+  onConfirmPaid,
 }) => {
-  const [offlineQrUrl, setOfflineQrUrl] = useState<string>('');
   const [copiedAcc, setCopiedAcc] = useState(false);
   const [copiedAmount, setCopiedAmount] = useState(false);
   const [copiedMemo, setCopiedMemo] = useState(false);
-  const [useOfflineQr, setUseOfflineQr] = useState(false);
+  const [qrLoadFailed, setQrLoadFailed] = useState(false);
 
-  if (!isOpen || !settlement || !fromMember || !toMember) return null;
+  if (!fromMember || !toMember) return null;
 
   const memo = `PHUOTMATE ${trip.inviteCode} ${fromMember.name.slice(0, 10).toUpperCase()}`.replace(/[^a-zA-Z0-9 ]/g, '');
 
@@ -40,19 +38,6 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
     amount: settlement.amount,
     memo: memo,
   });
-
-  useEffect(() => {
-    // Generate an EMVCo-like raw text QR as backup
-    const rawQrText = `00020101021238540010A00000072701240006${toMember.bankCode}01${toMember.accountNumber}5303704540${settlement.amount}5802VN62${memo.length.toString().padStart(2, '0')}08${memo}6304`;
-    
-    QRCode.toDataURL(rawQrText, {
-      width: 260,
-      margin: 1,
-      color: { dark: '#020617', light: '#ffffff' },
-    })
-      .then((url) => setOfflineQrUrl(url))
-      .catch((err) => console.error(err));
-  }, [settlement, toMember, memo]);
 
   const copyToClipboard = (text: string, setter: (val: boolean) => void) => {
     navigator.clipboard.writeText(text);
@@ -128,21 +113,17 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
             <>
               <div className="bg-white p-3 rounded-2xl shadow-xl flex flex-col items-center border-4 border-emerald-500/20">
                 <div className="relative w-52 h-52 flex items-center justify-center">
-                  {!useOfflineQr ? (
+                  {!qrLoadFailed ? (
                     <img
                       src={vietQrApiUrl}
                       alt="VietQR Chuyển Khoản"
                       className="w-full h-full object-contain"
-                      onError={() => setUseOfflineQr(true)}
+                      onError={() => setQrLoadFailed(true)}
                     />
                   ) : (
-                    offlineQrUrl && (
-                      <img
-                        src={offlineQrUrl}
-                        alt="VietQR Offline"
-                        className="w-full h-full object-contain"
-                      />
-                    )
+                    <p className="text-[11px] text-slate-600 text-center px-4">
+                      Không tải được mã VietQR (kiểm tra kết nối mạng). Vui lòng sao chép STK và số tiền bên dưới để chuyển khoản.
+                    </p>
                   )}
                 </div>
 
@@ -223,11 +204,12 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Action buttons: chỉ người trả hoặc người nhận được ghi nhận */}
+          {canConfirm && (
           <div className="pt-1 flex gap-2">
             <button
               onClick={() => {
-                onToggleSettled(settlement.fromMemberId, settlement.toMemberId);
+                onConfirmPaid(settlement);
                 onClose();
               }}
               className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition flex items-center justify-center gap-1.5"
@@ -236,6 +218,7 @@ export const VietQRModal: React.FC<VietQRModalProps> = ({
               <span>Xác Nhận Đã Thanh Toán Khoản Này</span>
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>

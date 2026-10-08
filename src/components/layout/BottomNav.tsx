@@ -1,18 +1,18 @@
 import React from 'react';
-import { Home, Compass, CalendarDays, Video, Wallet, Layers } from 'lucide-react';
+import { Home, Compass, CalendarDays, Wallet, Layers } from 'lucide-react';
 
-export type TabType = 'home' | 'overview' | 'itinerary' | 'story' | 'expenses' | 'architecture';
+export type TabType = 'home' | 'overview' | 'itinerary' | 'expenses';
 
 interface BottomNavProps {
   activeTab: TabType;
   onChangeTab: (tab: TabType) => void;
-  unreadExpenseCount?: number;
+  expenseCount?: number;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onChangeTab,
-  unreadExpenseCount = 0,
+  expenseCount = 0,
 }) => {
   const tabs = [
     {
@@ -28,16 +28,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       badge: 'AI',
     },
     {
-      id: 'story' as TabType,
-      label: 'Reels AI',
-      icon: Video,
-      badge: 'Hot',
-    },
-    {
       id: 'expenses' as TabType,
       label: 'Sổ quỹ',
       icon: Wallet,
-      badge: unreadExpenseCount > 0 ? `${unreadExpenseCount}` : null,
+      badge: expenseCount > 0 ? `${expenseCount}` : null,
     },
     {
       id: 'overview' as TabType,

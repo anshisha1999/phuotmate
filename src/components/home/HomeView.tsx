@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Trip, TripStatus, UserProfile } from '../../types/trip';
-import { 
-  Compass, Plus, LogIn, MapPin, Calendar, Users, 
-  CheckCircle2, Clock, Check, AlertCircle, Sparkles, 
-  Bike, ChevronRight, Lock, ShieldCheck, QrCode 
+import { Trip, UserProfile } from '../../types/trip';
+import { getTripDates, getTripTotalKm, isUserInActiveTrip, formatDate } from '../../services/tripRules';
+import type { ActionResult } from '../../App';
+import {
+  Compass, Plus, LogIn, MapPin, Calendar, Users,
+  CheckCircle2, Check, AlertCircle, Sparkles,
+  Bike, ChevronRight, ShieldCheck, QrCode
 } from 'lucide-react';
 
 interface HomeViewProps {
@@ -11,10 +13,8 @@ interface HomeViewProps {
   currentUser: UserProfile;
   onSelectTrip: (tripId: string) => void;
   onOpenCreateTrip: () => void;
-  onJoinTripByCode: (code: string) => boolean | Promise<{ success: boolean; message?: string } | boolean>;
-  onToggleTripStatus: (tripId: string) => void;
+  onJoinTripByCode: (code: string) => Promise<ActionResult>;
   onOpenProfile: () => void;
-  onOpenScanner?: () => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -23,9 +23,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onSelectTrip,
   onOpenCreateTrip,
   onJoinTripByCode,
-  onToggleTripStatus,
   onOpenProfile,
-  onOpenScanner,
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed'>('all');
   const [inviteCodeInput, setInviteCodeInput] = useState('');
@@ -34,31 +32,22 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [isJoining, setIsJoining] = useState(false);
   const [activeTourWarning, setActiveTourWarning] = useState<string | null>(null);
 
-  // Filter trips that the user has participated in or created
-  const userTrips = trips.filter(
-    (t) =>
-      t.createdBy === currentUser.id ||
-      t.members.some((m) => m.id === currentUser.id)
-  );
+  // Danh sách tour đã được lọc sẵn theo tài khoản (đang hoặc đã từng tham gia)
+  const userTrips = trips;
 
   // Tour is active for the current user ONLY IF the tour status is 'active' AND this user has NOT left!
-  const isUserActiveInTrip = (t: Trip) => {
-    return t.status === 'active' && t.members.some((m) => m.id === currentUser.id && m.status !== 'left');
-  };
+  const isUserActiveInTrip = (t: Trip) => isUserInActiveTrip(t, currentUser.id);
 
   // Active tour that user is CURRENTLY participating in (has NOT left)
   const currentActiveTrip = userTrips.find(isUserActiveInTrip);
 
   const activeTripsCount = userTrips.filter(isUserActiveInTrip).length;
-  const completedTripsCount = userTrips.filter((t) => !isUserActiveInTrip(t)).length;
-  const totalKm = userTrips.reduce(
-    (sum, t) => sum + t.days.reduce((dSum, d) => dSum + d.totalKm, 0),
-    0
-  );
+  const completedTripsCount = userTrips.filter((t) => t.status === 'completed').length;
+  const totalKm = userTrips.reduce((sum, t) => sum + getTripTotalKm(t), 0);
 
   const displayedTrips = userTrips.filter((t) => {
     if (filterStatus === 'active') return isUserActiveInTrip(t);
-    if (filterStatus === 'completed') return !isUserActiveInTrip(t);
+    if (filterStatus === 'completed') return t.status === 'completed';
     return true;
   });
 
@@ -92,20 +81,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
     setIsJoining(true);
     try {
       const res = await onJoinTripByCode(clean);
-      if (typeof res === 'object' && res !== null) {
-        if (res.success) {
-          setJoinSuccess(`Đã tham gia tour #${clean} thành công!`);
-          setInviteCodeInput('');
-          setTimeout(() => setJoinSuccess(''), 3000);
-        } else {
-          setJoinError(res.message || 'Không tìm thấy tour với mã mời này hoặc mã không hợp lệ.');
-        }
-      } else if (res === true) {
+      if (res.success) {
         setJoinSuccess(`Đã tham gia tour #${clean} thành công!`);
         setInviteCodeInput('');
         setTimeout(() => setJoinSuccess(''), 3000);
       } else {
-        setJoinError('Không tìm thấy tour với mã mời này hoặc mã không hợp lệ.');
+        setJoinError(res.message || 'Không tìm thấy tour với mã mời này hoặc mã không hợp lệ.');
       }
     } catch (err: any) {
       setJoinError(err?.message || 'Lỗi khi tham gia tour. Vui lòng thử lại!');
@@ -217,7 +198,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="relative flex-1">
             <input
               type="text"
-              maxLength={8}
+              maxLength={6}
               placeholder="Nhập mã tour (vd: HG8824)"
               value={inviteCodeInput}
               onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
@@ -226,7 +207,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
           <button
             type="submit"
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition active:scale-95 shrink-0 flex items-center gap-1"
+            disabled={isJoining}
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition active:scale-95 shrink-0 flex items-center gap-1 disabled:opacity-50"
           >
             <LogIn className="w-3.5 h-3.5 text-orange-400" />
             <span>Vào đoàn</span>
@@ -319,7 +301,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               Bạn có thể tạo chuyến đi mới hoặc nhập mã mời từ các biker khác để cùng phượt!
             </p>
             <button
-              onClick={onOpenCreateTrip}
+              onClick={handleCreateTripClick}
               className="px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-xl shadow-lg"
             >
               + Tạo Tour Mới Ngay
@@ -330,9 +312,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
             {displayedTrips.map((trip) => {
               const isCreator = trip.createdBy === currentUser.id;
               const isActive = trip.status === 'active';
-              const tourKm = trip.days.reduce((sum, d) => sum + d.totalKm, 0);
-              const myMember = trip.members.find((m) => m.id === currentUser.id);
-              const hasLeft = myMember?.status === 'left';
+              const tourKm = getTripTotalKm(trip);
+              const hasLeft = !trip.activeMemberIds.includes(currentUser.id);
 
               return (
                 <div
@@ -397,15 +378,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-500" />
-                          <span>{trip.startDate}</span>
+                          <span>{formatDate(trip.startDate)}</span>
                         </span>
                         <span>•</span>
-                        <span>{trip.days.length} Ngày ({tourKm} km)</span>
+                        <span>{getTripDates(trip.startDate, trip.endDate).length} Ngày ({tourKm} km)</span>
                       </div>
 
                       <div className="flex items-center gap-1">
                         <Users className="w-3 h-3 text-slate-500" />
-                        <span>{trip.members.length} Biker</span>
+                        <span>{trip.activeMemberIds.length} Biker</span>
                       </div>
                     </div>
 
@@ -422,42 +403,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
                           </span>
                         )}
                       </div>
-
-                      {/* "Status hoàn thành phải do chính người tạo xác nhận" */}
-                      {isCreator ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleTripStatus(trip.id);
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 active:scale-95 ${
-                            isActive
-                              ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                              : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
-                          }`}
-                          title="Chỉ người tạo mới có quyền đổi trạng thái"
-                        >
-                          {isActive ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Xác nhận hoàn thành</span>
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Mở lại tour</span>
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <div
-                          className="flex items-center gap-1 text-[10px] text-slate-500 font-medium"
-                          title="Chỉ người tạo mới có quyền xác nhận hoàn thành"
-                        >
-                          <Lock className="w-3 h-3 text-slate-600" />
-                          <span>Chỉ Trưởng đoàn đổi status</span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Open Trip Button */}

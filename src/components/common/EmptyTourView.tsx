@@ -3,10 +3,11 @@ import { Compass, Plus, LogIn, Calendar, Wallet, Sparkles, Bike, ArrowRight } fr
 import { Trip } from '../../types/trip';
 
 interface EmptyTourViewProps {
-  type: 'overview' | 'itinerary' | 'expenses' | 'ai';
+  type: 'overview' | 'itinerary' | 'expenses';
   onOpenCreateTrip: () => void;
   onGoHome: () => void;
   pastTrips?: Trip[];
+  currentUserId: string;
   onSelectPastTrip?: (tripId: string) => void;
 }
 
@@ -15,6 +16,7 @@ export const EmptyTourView: React.FC<EmptyTourViewProps> = ({
   onOpenCreateTrip,
   onGoHome,
   pastTrips = [],
+  currentUserId,
   onSelectPastTrip,
 }) => {
   const getTabInfo = () => {
@@ -30,12 +32,6 @@ export const EmptyTourView: React.FC<EmptyTourViewProps> = ({
           icon: <Wallet className="w-10 h-10 text-emerald-400" />,
           title: 'Chưa Có Sổ Quỹ',
           desc: 'Bạn chưa ở trong chuyến đi nào. Sổ quỹ nhóm giúp tự động chia tiền từng bữa ăn, tiền xăng, miễn phí cho người đã thoát và tạo mã VietQR chuyển khoản nhanh.',
-        };
-      case 'ai':
-        return {
-          icon: <Sparkles className="w-10 h-10 text-purple-400" />,
-          title: 'Chưa Có Reels AI',
-          desc: 'Chưa có dữ liệu chuyến đi để dựng kịch bản video hoặc viết bài hành trình. Hãy tham gia hoặc tạo chuyến đi để khám phá tính năng này!',
         };
       default:
         return {
@@ -105,7 +101,11 @@ export const EmptyTourView: React.FC<EmptyTourViewProps> = ({
                     <span>{pt.destination}</span>
                     <span>•</span>
                     <span className={pt.status === 'completed' ? 'text-blue-400' : 'text-slate-400'}>
-                      {pt.status === 'completed' ? 'Đã hoàn thành' : 'Đã rời tour'}
+                      {pt.status === 'completed'
+                        ? 'Đã hoàn thành'
+                        : pt.activeMemberIds.includes(currentUserId)
+                        ? 'Đang tham gia'
+                        : 'Đã rời tour'}
                     </span>
                   </div>
                 </div>

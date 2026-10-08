@@ -2,13 +2,10 @@ import React, { useState } from 'react';
 import { Compass, Shield, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 
 interface LoginScreenProps {
-  onLoginWithGoogle: (email: string, name?: string) => void;
-  onLoginWithRealFirebaseGoogle: () => Promise<void>;
+  onLogin: () => Promise<void>;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ 
-  onLoginWithRealFirebaseGoogle 
-}) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -18,12 +15,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setStatusNotice('Đang kết nối Firebase Auth và mở cửa sổ Google...');
     setErrorMessage('');
     try {
-      await onLoginWithRealFirebaseGoogle();
+      await onLogin();
     } catch (err: any) {
       console.warn('Firebase popup status:', err?.code || err?.message || err);
       if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') {
         setErrorMessage('Cửa sổ đăng nhập bị trình duyệt chặn pop-up. Vui lòng cho phép mở pop-up và nhấn lại.');
-      } else {
+      } else if (err?.code === 'auth/unauthorized-domain') {
+        setErrorMessage('Tên miền hiện tại chưa được phép đăng nhập. Hãy thêm tên miền này vào Firebase Console > Authentication > Settings > Authorized domains.');
+      } else if (err?.code !== 'auth/popup-closed-by-user') {
         setErrorMessage(err?.message || 'Không thể mở đăng nhập Google. Vui lòng thử lại!');
       }
     } finally {

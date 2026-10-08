@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { todayDateString } from '../../services/tripRules';
 import { Trip, VehicleType } from '../../types/trip';
+import { TripInfoInput } from '../../services/firebase';
+import type { ActionResult } from '../../App';
 import { X, Plus, Bike, MapPin, Calendar, Sparkles } from 'lucide-react';
 
 interface CreateTripModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateTrip: (newTrip: Partial<Trip>) => void;
+  onSubmit: (input: TripInfoInput) => Promise<ActionResult>;
+  editTrip?: Trip; // Có giá trị = Trưởng đoàn sửa thông tin tour
 }
 
 const COVER_PRESETS = [
@@ -30,28 +34,51 @@ const COVER_PRESETS = [
 export const CreateTripModal: React.FC<CreateTripModalProps> = ({
   isOpen,
   onClose,
-  onCreateTrip,
+  onSubmit,
+  editTrip,
 }) => {
   const [title, setTitle] = useState('');
   const [departure, setDeparture] = useState('Hà Nội');
   const [destination, setDestination] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(() => todayDateString());
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
   const [vehicle, setVehicle] = useState<VehicleType>('Côn tay (Winner X, Exciter, Raider)');
   const [vibe, setVibe] = useState('Chinh phục đèo dốc & Khám phá');
   const [coverImage, setCoverImage] = useState(COVER_PRESETS[0].url);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Chế độ sửa: nạp lại thông tin mới nhất của tour mỗi lần mở
+  useEffect(() => {
+    if (!isOpen || !editTrip) return;
+    setTitle(editTrip.title);
+    setDeparture(editTrip.departure);
+    setDestination(editTrip.destination);
+    setStartDate(editTrip.startDate);
+    setEndDate(editTrip.endDate);
+    setVehicle(editTrip.defaultVehicle);
+    setVibe(editTrip.vibe);
+    setCoverImage(editTrip.coverImage);
+    // Chỉ nạp khi mở form - không ghi đè nội dung đang gõ khi tour cập nhật realtime
+  }, [isOpen, editTrip?.id]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
     if (!title.trim() || !destination.trim()) return;
+    if (endDate < startDate) {
+      setErrorMessage('Ngày về phải sau hoặc bằng ngày đi.');
+      return;
+    }
 
-    onCreateTrip({
+    setIsSubmitting(true);
+    const result = await onSubmit({
       title: title.trim(),
       departure: departure.trim(),
       destination: destination.trim(),
@@ -61,9 +88,16 @@ export const CreateTripModal: React.FC<CreateTripModalProps> = ({
       vibe: vibe.trim(),
       coverImage: coverImage.trim() || COVER_PRESETS[0].url,
     });
+    setIsSubmitting(false);
 
-    setTitle('');
-    setDestination('');
+    if (!result.success) {
+      if (result.message) setErrorMessage(result.message);
+      return;
+    }
+    if (!editTrip) {
+      setTitle('');
+      setDestination('');
+    }
     onClose();
   };
 
@@ -77,8 +111,10 @@ export const CreateTripModal: React.FC<CreateTripModalProps> = ({
               <Plus className="w-4 h-4 stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Tạo Chuyến Đi Mới</h3>
-              <p className="text-[11px] text-slate-400">Bạn sẽ là Trưởng đoàn (Lead) của tour này</p>
+              <h3 className="font-bold text-white text-base">{editTrip ? 'Sửa Thông Tin Tour' : 'Tạo Chuyến Đi Mới'}</h3>
+              <p className="text-[11px] text-slate-400">
+                {editTrip ? 'Lịch trình được chia theo ngày đi - ngày về' : 'Bạn sẽ là Trưởng đoàn (Lead) của tour này'}
+              </p>
             </div>
           </div>
           <button
@@ -210,6 +246,12 @@ export const CreateTripModal: React.FC<CreateTripModalProps> = ({
             </div>
           </div>
 
+          {errorMessage && (
+            <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-[11px] text-red-300">
+              {errorMessage}
+            </div>
+          )}
+
           {/* Submit Buttons */}
           <div className="pt-2 flex gap-2">
             <button
@@ -221,11 +263,11 @@ export const CreateTripModal: React.FC<CreateTripModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || !destination.trim()}
+              disabled={!title.trim() || !destination.trim() || isSubmitting}
               className="flex-1 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-50 text-white font-extrabold rounded-xl shadow-lg shadow-orange-500/20 transition flex items-center justify-center gap-1.5"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
-              Khởi Tạo Chuyến Đi
+              {editTrip ? 'Lưu Thông Tin Tour' : 'Khởi Tạo Chuyến Đi'}
             </button>
           </div>
         </form>

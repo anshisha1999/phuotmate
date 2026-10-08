@@ -1,61 +1,53 @@
 import React, { useState } from 'react';
-import { Trip } from '../../types/trip';
-import { 
-  MapPin, Calendar, Users, Bike, ShieldAlert, Sparkles, 
-  CheckCircle2, Compass, ArrowRight, Wallet, Video, QrCode, Phone, Lock, Clock, Check, LogOut, AlertTriangle 
+import { Trip, Member, Expense, UserProfile } from '../../types/trip';
+import {
+  MapPin, Calendar, Bike, ShieldAlert, Sparkles,
+  CheckCircle2, Wallet, QrCode, Phone, Lock, LogOut, AlertTriangle, Pencil, CalendarDays
 } from 'lucide-react';
-import { UserProfile } from '../../types/trip';
 import { formatVND } from '../../services/debtSimplifier';
-import { CompleteTripModal } from './CompleteTripModal';
+import {
+  TripPermissions, getTripDates, getTripTotalKm, formatDate, formatDateTime
+} from '../../services/tripRules';
+import type { TabType } from '../layout/BottomNav';
 
 interface TripOverviewTabProps {
   trip: Trip;
+  members: Member[];
+  expenses: Expense[];
   currentUser: UserProfile;
-  onNavigateTab: (tab: 'itinerary' | 'story' | 'expenses' | 'architecture') => void;
+  permissions: TripPermissions;
+  onNavigateTab: (tab: TabType) => void;
   onOpenInvite: () => void;
   onOpenAiPlanner: () => void;
-  onToggleTripStatus: (tripId: string) => void;
-  onLeaveTrip?: (tripId: string) => void;
+  onOpenEditTrip: () => void;
+  onRequestComplete: () => void;
+  onLeaveTrip: (tripId: string) => void;
 }
 
 export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
   trip,
+  members,
+  expenses,
   currentUser,
+  permissions,
   onNavigateTab,
   onOpenInvite,
   onOpenAiPlanner,
-  onToggleTripStatus,
+  onOpenEditTrip,
+  onRequestComplete,
   onLeaveTrip,
 }) => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
-  const totalExpense = trip.expenses.reduce((sum, e) => sum + e.amount, 0);
-  const totalKm = trip.days.reduce((sum, d) => sum + d.totalKm, 0);
-  const isCreator = trip.createdBy === currentUser.id;
-  const isActive = trip.status === 'active';
+  const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalKm = getTripTotalKm(trip);
+  const daysCount = getTripDates(trip.startDate, trip.endDate).length;
+  const { isLead, isActiveTrip, canEdit, canUseAi, canLeave, canComplete, hasLeft } = permissions;
 
-  const currentUserMember = trip.members.find((m) => m.id === currentUser.id);
-  const isUserActiveInTrip = currentUserMember && currentUserMember.status !== 'left';
-  const hasUserLeftTrip = currentUserMember && currentUserMember.status === 'left';
-
-  const formatDateTime = (iso?: string) => {
-    if (!iso) return '';
-    try {
-      const d = new Date(iso);
-      const hours = d.getHours().toString().padStart(2, '0');
-      const minutes = d.getMinutes().toString().padStart(2, '0');
-      const day = d.getDate().toString().padStart(2, '0');
-      const month = (d.getMonth() + 1).toString().padStart(2, '0');
-      return `${hours}:${minutes} ngày ${day}/${month}`;
-    } catch {
-      return iso;
-    }
-  };
+  const currentUserMember = members.find((m) => m.id === currentUser.id);
+  const activeMemberCount = members.filter((m) => m.status === 'active').length;
 
   const handleConfirmLeave = () => {
-    if (onLeaveTrip) {
-      onLeaveTrip(trip.id);
-    }
+    onLeaveTrip(trip.id);
     setIsLeaveModalOpen(false);
   };
 
@@ -78,13 +70,15 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
               <span className="text-white tracking-wider">{trip.inviteCode}</span>
             </span>
 
-            <button
-              onClick={onOpenInvite}
-              className="px-3 py-1 rounded-full bg-orange-500/90 hover:bg-orange-600 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1.5 shadow-lg active:scale-95 transition"
-            >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>Quét QR vào nhóm</span>
-            </button>
+            {canEdit && (
+              <button
+                onClick={onOpenInvite}
+                className="px-3 py-1 rounded-full bg-orange-500/90 hover:bg-orange-600 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1.5 shadow-lg active:scale-95 transition"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Quét QR vào nhóm</span>
+              </button>
+            )}
           </div>
 
           {/* Bottom Title on Hero */}
@@ -103,7 +97,7 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
               <span>•</span>
               <span className="flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                {trip.startDate} - {trip.endDate}
+                {formatDate(trip.startDate)} - {formatDate(trip.endDate)}
               </span>
             </div>
           </div>
@@ -113,7 +107,7 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
         <div className="grid grid-cols-4 divide-x divide-slate-800/80 bg-slate-950/90 py-2.5 px-2 border-t border-slate-800">
           <div className="text-center px-1">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Thời gian</div>
-            <div className="text-sm font-black text-white">{trip.days.length} Ngày</div>
+            <div className="text-sm font-black text-white">{daysCount} Ngày</div>
           </div>
           <div className="text-center px-1">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Tổng chặng</div>
@@ -121,7 +115,7 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
           </div>
           <div className="text-center px-1">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Quân số</div>
-            <div className="text-sm font-black text-white">{trip.members.length} Biker</div>
+            <div className="text-sm font-black text-white">{activeMemberCount} Biker</div>
           </div>
           <div className="text-center px-1">
             <div className="text-[10px] text-slate-400 uppercase font-semibold">Quỹ đã chi</div>
@@ -131,60 +125,52 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Tour Status & Creator Confirmation Banner */}
+        {/* Tour Status & Lead Confirmation Banner */}
         <div className="p-3 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2">
             <span
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
-                isActive
+                isActiveTrip
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                   : 'bg-slate-800 text-slate-300 border border-slate-700'
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}></span>
-              <span>{isActive ? 'TOUR ĐANG DIỄN RA' : 'TOUR ĐÃ HOÀN THÀNH'}</span>
+              <span className={`w-2 h-2 rounded-full ${isActiveTrip ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`}></span>
+              <span>{isActiveTrip ? 'TOUR ĐANG DIỄN RA' : 'TOUR ĐÃ HOÀN THÀNH'}</span>
             </span>
 
-            {isCreator && (
+            {isLead && (
               <span className="text-[10px] text-orange-400 font-semibold hidden sm:inline">
-                (Bạn là Người tạo)
+                (Bạn là Trưởng đoàn)
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Action button: creator only */}
-            {isCreator && (
+            {/* Lead: sửa thông tin tour */}
+            {canComplete && (
               <button
-                onClick={() => {
-                  if (isActive) {
-                    setIsCompleteModalOpen(true);
-                  } else {
-                    onToggleTripStatus(trip.id);
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow ${
-                  isActive
-                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
-                    : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
-                }`}
+                onClick={onOpenEditTrip}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5 active:scale-95"
               >
-                {isActive ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Xác nhận hoàn thành tour</span>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Kích hoạt lại tour</span>
-                  </>
-                )}
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Sửa tour</span>
               </button>
             )}
 
-            {/* Leave Tour Button for Active Participant */}
-            {isUserActiveInTrip && (
+            {/* Lead: xác nhận hoàn thành (không thể mở lại) */}
+            {canComplete && (
+              <button
+                onClick={onRequestComplete}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow bg-amber-500 hover:bg-amber-600 text-slate-950"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Xác nhận hoàn thành tour</span>
+              </button>
+            )}
+
+            {/* Thành viên: thoát tour khi tour đang chạy */}
+            {canLeave && (
               <button
                 onClick={() => setIsLeaveModalOpen(true)}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition flex items-center gap-1.5 active:scale-95 shadow"
@@ -195,57 +181,71 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
             )}
           </div>
         </div>
+
+        {canComplete && (
+          <div className="px-3 pb-3 bg-slate-950 text-[10px] text-slate-500 flex items-center gap-1.5">
+            <Lock className="w-3 h-3 text-slate-600" />
+            <span>Trưởng đoàn không thể thoát tour khi chưa xác nhận hoàn thành.</span>
+          </div>
+        )}
       </div>
 
-      {/* User Left Notice Banner */}
-      {hasUserLeftTrip && (
-        <div className="p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-xs text-slate-300 flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-              <LogOut className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="font-bold text-rose-300">Bạn đã rời chuyến đi này</div>
-              <div className="text-[11px] text-slate-400">
-                Thời gian rời tour: {formatDateTime(currentUserMember?.leftAt)}. Các khoản chi sau mốc này không tính cho bạn.
-              </div>
+      {/* Read-only Notice Banners */}
+      {hasLeft && (
+        <div className="p-3 rounded-2xl bg-slate-900 border border-rose-500/30 text-xs text-slate-300 flex items-center gap-2.5 shadow-lg">
+          <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+            <LogOut className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-bold text-rose-300">Bạn đã rời chuyến đi này • Chỉ xem</div>
+            <div className="text-[11px] text-slate-400">
+              Thời gian rời tour: {formatDateTime(currentUserMember?.leftAt)}. Các khoản chi sau mốc này không tính cho bạn.
+              {isActiveTrip && ' Bạn có thể tham gia lại bằng mã mời khi tour chưa hoàn thành.'}
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-[10px] text-slate-400 font-bold shrink-0">
-            Lịch sử
+        </div>
+      )}
+
+      {!isActiveTrip && (
+        <div className="p-3 rounded-2xl bg-slate-900 border border-slate-700 text-xs text-slate-300 flex items-center gap-2.5">
+          <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+          <span>
+            Tour đã hoàn thành lúc {formatDateTime(trip.completedAt)}. Dữ liệu được khóa, chỉ có thể xem lại.
           </span>
         </div>
       )}
 
-      {/* 3 Main Action Tiles */}
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          onClick={onOpenAiPlanner}
-          className="p-3 rounded-2xl bg-gradient-to-br from-orange-500/15 to-amber-500/10 border border-orange-500/30 hover:border-orange-500/60 text-left transition group active:scale-95 flex flex-col justify-between"
-        >
-          <div className="w-8 h-8 rounded-xl bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-2">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-xs font-bold text-white group-hover:text-orange-300">
-              AI Lên Lịch Trình
+      {/* Main Action Tiles */}
+      <div className={`grid gap-2 ${canUseAi ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {canUseAi && (
+          <button
+            onClick={onOpenAiPlanner}
+            className="p-3 rounded-2xl bg-gradient-to-br from-orange-500/15 to-amber-500/10 border border-orange-500/30 hover:border-orange-500/60 text-left transition group active:scale-95 flex flex-col justify-between"
+          >
+            <div className="w-8 h-8 rounded-xl bg-orange-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/30 mb-2">
+              <Sparkles className="w-4 h-4" />
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Gemini Flash đèo dốc</div>
-          </div>
-        </button>
+            <div>
+              <div className="text-xs font-bold text-white group-hover:text-orange-300">
+                AI Lên Lịch Trình
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Chỉ Trưởng đoàn</div>
+            </div>
+          </button>
+        )}
 
         <button
-          onClick={() => onNavigateTab('story')}
-          className="p-3 rounded-2xl bg-gradient-to-br from-purple-500/15 to-pink-500/10 border border-purple-500/30 hover:border-purple-500/60 text-left transition group active:scale-95 flex flex-col justify-between"
+          onClick={() => onNavigateTab('itinerary')}
+          className="p-3 rounded-2xl bg-gradient-to-br from-blue-500/15 to-indigo-500/10 border border-blue-500/30 hover:border-blue-500/60 text-left transition group active:scale-95 flex flex-col justify-between"
         >
-          <div className="w-8 h-8 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 mb-2">
-            <Video className="w-4 h-4" />
+          <div className="w-8 h-8 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 mb-2">
+            <CalendarDays className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs font-bold text-white group-hover:text-purple-300">
-              Kịch Bản Reels AI
+            <div className="text-xs font-bold text-white group-hover:text-blue-300">
+              Lịch Trình Theo Ngày
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Tạo từ 3-5 ảnh chụp</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">{daysCount} ngày • {totalKm} km</div>
           </div>
         </button>
 
@@ -271,19 +271,21 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
           <div className="flex items-center gap-2">
             <Bike className="w-4 h-4 text-orange-400" />
             <h2 className="text-xs font-bold text-white uppercase tracking-wider">
-              Đội Hình Biker Trong Đoàn ({trip.members.length})
+              Đội Hình Biker Trong Đoàn ({activeMemberCount})
             </h2>
           </div>
-          <button
-            onClick={onOpenInvite}
-            className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1"
-          >
-            <span>+ Mời thêm</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={onOpenInvite}
+              className="text-xs text-orange-400 hover:text-orange-300 font-semibold flex items-center gap-1"
+            >
+              <span>+ Mời thêm</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {trip.members.map((member) => {
+          {members.map((member) => {
             const isLeft = member.status === 'left';
 
             return (
@@ -309,20 +311,13 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
                   )}
                   <div>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-white text-xs">{member.name}</span>
+                      <span className="font-bold text-white text-xs">
+                        {member.name}
+                        {member.id === currentUser.id && ' (Bạn)'}
+                      </span>
                       {member.role.includes('Lead') && (
                         <span className="px-1.5 py-0.2 bg-red-500/20 text-red-400 rounded text-[9px] font-bold">
                           LEAD
-                        </span>
-                      )}
-                      {member.role.includes('Sweep') && (
-                        <span className="px-1.5 py-0.2 bg-blue-500/20 text-blue-400 rounded text-[9px] font-bold">
-                          CHỐT
-                        </span>
-                      )}
-                      {member.role.includes('Treasurer') && (
-                        <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-400 rounded text-[9px] font-bold">
-                          THỦ QUỸ
                         </span>
                       )}
                       {isLeft ? (
@@ -382,23 +377,19 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
             'Kiểm tra áp suất lốp trước khi xuất phát. Khi đổ đèo dốc gắt, luôn giữ số thấp (số 2 hoặc số 3) để hãm động cơ, TUYỆT ĐỐI không bóp chặt phanh liên tục gây mất thắng nhiệt.'}
         </div>
 
-        <div>
-          <h3 className="text-xs font-bold text-slate-300 mb-2">Checklist Trang Bị Bắt Buộc:</h3>
-          <div className="space-y-1.5">
-            {(trip.gearChecklist || [
-              'Giáp bảo hộ tay chân 4 món',
-              'Mũ bảo hiểm đạt chuẩn 3/4 hoặc Fullface',
-              'Bộ đồ nghề vá lốp xe máy mini + Bơm điện tử',
-              'Áo mưa bộ cánh dơi cản gió lạnh',
-              'Túi sơ cứu y tế cá nhân',
-            ]).map((item, idx) => (
-              <div key={idx} className="flex items-center gap-2 text-xs text-slate-300">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>{item}</span>
-              </div>
-            ))}
+        {(trip.gearChecklist || []).length > 0 && (
+          <div>
+            <h3 className="text-xs font-bold text-slate-300 mb-2">Checklist Trang Bị Bắt Buộc:</h3>
+            <div className="space-y-1.5">
+              {(trip.gearChecklist || []).map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-xs text-slate-300">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Leave Tour Confirmation Modal */}
@@ -423,7 +414,7 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
                 🛡️ Quyền lợi chi phí: Những khoản chi phát sinh SAU khi bạn thoát tour sẽ KHÔNG tính cho bạn!
               </p>
               <p className="text-slate-400">
-                📁 Dữ liệu lịch trình và sổ quỹ đã qua vẫn được lưu lại trong tài khoản của bạn để xem lại bất cứ lúc nào.
+                🔒 Sau khi thoát, bạn chỉ có thể xem lại tour. Bạn có thể tham gia lại bằng mã mời nếu tour chưa hoàn thành.
               </p>
             </div>
 
@@ -447,15 +438,6 @@ export const TripOverviewTab: React.FC<TripOverviewTabProps> = ({
           </div>
         </div>
       )}
-
-      {/* Complete Trip Confirmation Modal */}
-      <CompleteTripModal
-        isOpen={isCompleteModalOpen}
-        trip={trip}
-        onClose={() => setIsCompleteModalOpen(false)}
-        onConfirmComplete={() => onToggleTripStatus(trip.id)}
-        onNavigateToExpenses={() => onNavigateTab('expenses')}
-      />
     </div>
   );
 };

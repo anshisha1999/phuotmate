@@ -1,55 +1,69 @@
 import React, { useState } from 'react';
-import { Trip, Expense, ExpenseCategory, Member, DebtSettlement, UserProfile } from '../../types/trip';
-import { 
-  calculateBalancesAndDebts, formatVND, VIETNAM_BANKS 
-} from '../../services/debtSimplifier';
+import { Trip, Expense, ExpenseCategory, Member, DebtSettlement, UserProfile, Payment } from '../../types/trip';
+import { calculateBalancesAndDebts, formatVND } from '../../services/debtSimplifier';
+import {
+  addExpense, updateExpense, deleteExpense, addPayment, deletePayment, describeFirebaseError
+} from '../../services/firebase';
+import { TripPermissions, formatDateTime } from '../../services/tripRules';
 import { VietQRModal } from './VietQRModal';
-import { 
-  Plus, Wallet, QrCode, ArrowRight, CheckCircle2, Trash2, 
-  Users, Fuel, Utensils, Home, Ticket, Wrench, MoreHorizontal, X, Check, AlertCircle 
+import {
+  Plus, Wallet, QrCode, CheckCircle2, Trash2, Edit3, Lock,
+  Fuel, Utensils, Home, Ticket, Wrench, MoreHorizontal, X, Check
 } from 'lucide-react';
 
 interface ExpenseViewProps {
   trip: Trip;
-  currentUser?: UserProfile;
-  onAddExpense: (expense: Expense) => void;
-  onDeleteExpense: (expenseId: string) => void;
+  members: Member[];
+  expenses: Expense[];
+  payments: Payment[];
+  currentUser: UserProfile;
+  permissions: TripPermissions;
 }
+
+const reportError = (fallback: string) => (error: unknown) => {
+  console.error(error);
+  alert(describeFirebaseError(error, fallback));
+};
 
 export const ExpenseView: React.FC<ExpenseViewProps> = ({
   trip,
+  members,
+  expenses,
+  payments,
   currentUser,
-  onAddExpense,
-  onDeleteExpense,
+  permissions,
 }) => {
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const { canEdit, hasLeft } = permissions;
+  // Khoản chi đang sửa ('' = thêm mới, null = đóng form)
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [selectedSettlement, setSelectedSettlement] = useState<DebtSettlement | null>(null);
-  const [settledMap, setSettledMap] = useState<Record<string, boolean>>({});
 
   // Active members who haven't left the tour
-  const activeMembers = trip.members.filter((m) => m.status !== 'left');
-  const userMember = currentUser ? trip.members.find((m) => m.id === currentUser.id) : null;
-  const userHasLeft = userMember?.status === 'left';
+  const activeMembers = members.filter((m) => m.status === 'active');
 
   // Add Expense Form State
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState<number>(100000);
   const [category, setCategory] = useState<ExpenseCategory>('Ăn uống');
-  const [paidById, setPaidById] = useState<string>(activeMembers[0]?.id || trip.members[0]?.id || '');
+  const [paidById, setPaidById] = useState<string>('');
   const [splitMode, setSplitMode] = useState<'all' | 'single' | 'custom'>('all');
-  const [singleMemberId, setSingleMemberId] = useState<string>(activeMembers[0]?.id || trip.members[0]?.id || '');
-  const [splitWithIds, setSplitWithIds] = useState<string[]>(activeMembers.map((m) => m.id));
+  const [singleMemberId, setSingleMemberId] = useState<string>('');
+  const [splitWithIds, setSplitWithIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
 
-  // Calculate balances & debt simplification (respects leftAt timestamps)
-  const { balances, settlements, totalTripExpense } = calculateBalancesAndDebts(
-    trip.members,
-    trip.expenses
-  );
+  // Calculate balances & debt simplification (respects leftAt / absences & recorded payments)
+  const { balances, settlements, totalTripExpense } = calculateBalancesAndDebts(members, expenses, payments);
 
-  const perPersonAvg = activeMembers.length > 0 
-    ? Math.round(totalTripExpense / activeMembers.length) 
-    : (trip.members.length > 0 ? Math.round(totalTripExpense / trip.members.length) : 0);
+  const perPersonAvg = activeMembers.length > 0
+    ? Math.round(totalTripExpense / activeMembers.length)
+    : (members.length > 0 ? Math.round(totalTripExpense / members.length) : 0);
+
+  const memberName = (id: string) => members.find((m) => m.id === id)?.name || 'Ẩn danh';
+
+  // Người trả: thành viên đang trong tour (+ người trả cũ khi sửa khoản chi của người đã rời)
+  const payerOptions = activeMembers.some((m) => m.id === paidById) || !paidById
+    ? activeMembers
+    : [...activeMembers, ...members.filter((m) => m.id === paidById)];
 
   // Toggle member in split list
   const handleToggleSplitMember = (memberId: string) => {
@@ -70,16 +84,32 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
   };
 
   const handleOpenAddModal = () => {
+    setTitle('');
+    setAmount(100000);
+    setCategory('Ăn uống');
+    setNote('');
     setSplitMode('all');
     setSplitWithIds(activeMembers.map((m) => m.id));
-    setPaidById(activeMembers[0]?.id || trip.members[0]?.id || '');
-    setSingleMemberId(activeMembers[0]?.id || trip.members[0]?.id || '');
-    setIsAddModalOpen(true);
+    setPaidById(currentUser.id);
+    setSingleMemberId(currentUser.id);
+    setEditingExpenseId('');
   };
 
-  const handleCreateExpense = (e: React.FormEvent) => {
+  const handleOpenEditModal = (exp: Expense) => {
+    setTitle(exp.title);
+    setAmount(exp.amount);
+    setCategory(exp.category);
+    setNote(exp.note || '');
+    setPaidById(exp.paidById);
+    setSingleMemberId(exp.splitWithIds[0] || currentUser.id);
+    setSplitMode('custom');
+    setSplitWithIds(exp.splitWithIds);
+    setEditingExpenseId(exp.id);
+  };
+
+  const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || amount <= 0) return;
+    if (!title.trim() || !(amount > 0)) return;
 
     let finalSplit: string[] = [];
     if (splitMode === 'all') {
@@ -94,29 +124,45 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
       finalSplit = [paidById];
     }
 
-    const nowIso = new Date().toISOString();
-    const newExpense: Expense = {
-      id: `exp_${Date.now()}`,
+    const fields = {
       title: title.trim(),
-      amount: Number(amount),
+      amount: Math.round(Number(amount)),
       category,
       paidById,
       splitWithIds: finalSplit,
-      date: nowIso,
-      createdAt: nowIso,
       note: note.trim() || undefined,
     };
 
-    onAddExpense(newExpense);
-    setTitle('');
-    setAmount(100000);
-    setNote('');
-    setIsAddModalOpen(false);
+    if (editingExpenseId) {
+      updateExpense(trip.id, editingExpenseId, fields).catch(reportError('Không lưu được khoản chi.'));
+    } else {
+      addExpense(trip.id, {
+        ...fields,
+        createdBy: currentUser.id,
+      }).catch(reportError('Không ghi được khoản chi.'));
+    }
+    setEditingExpenseId(null);
   };
 
-  const handleToggleSettled = (fromId: string, toId: string) => {
-    const key = `${fromId}_${toId}`;
-    setSettledMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  const handleDeleteExpense = (exp: Expense) => {
+    if (confirm(`Xóa khoản chi "${exp.title}" (${formatVND(exp.amount)})?`)) {
+      deleteExpense(trip.id, exp.id).catch(reportError('Không xóa được khoản chi.'));
+    }
+  };
+
+  const handleConfirmPaid = (settle: DebtSettlement) => {
+    addPayment(trip.id, {
+      fromMemberId: settle.fromMemberId,
+      toMemberId: settle.toMemberId,
+      amount: settle.amount,
+      createdBy: currentUser.id,
+    }).catch(reportError('Không ghi nhận được thanh toán.'));
+  };
+
+  const handleUndoPayment = (payment: Payment) => {
+    if (confirm(`Hủy ghi nhận ${memberName(payment.fromMemberId)} đã trả ${formatVND(payment.amount)}?`)) {
+      deletePayment(trip.id, payment.id).catch(reportError('Không hủy được ghi nhận thanh toán.'));
+    }
   };
 
   const getCategoryIcon = (cat: ExpenseCategory) => {
@@ -153,7 +199,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
             </div>
           </div>
 
-          {!userHasLeft && trip.status === 'active' && (
+          {canEdit && (
             <button
               onClick={handleOpenAddModal}
               className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-slate-950 text-xs font-bold rounded-xl shadow-lg shadow-emerald-500/25 transition shrink-0"
@@ -164,10 +210,17 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
           )}
         </div>
 
-        {userHasLeft && (
+        {hasLeft && (
           <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 flex items-center gap-2">
             <span className="text-amber-400">ℹ️</span>
-            <span>Bạn đã rời tour này. Các khoản chi phát sinh sau khi bạn rời tour sẽ không bị tính vào tài khoản của bạn.</span>
+            <span>Bạn đã rời tour này (chỉ xem). Các khoản chi phát sinh sau khi bạn rời tour sẽ không bị tính vào tài khoản của bạn.</span>
+          </div>
+        )}
+
+        {trip.status === 'completed' && (
+          <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300 flex items-center gap-2">
+            <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>Tour đã hoàn thành • Sổ quỹ đã khóa, chỉ để xem lại.</span>
           </div>
         )}
 
@@ -209,22 +262,16 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {settlements.map((settle, idx) => {
-              const fromMember = trip.members.find((m) => m.id === settle.fromMemberId);
-              const toMember = trip.members.find((m) => m.id === settle.toMemberId);
-              const key = `${settle.fromMemberId}_${settle.toMemberId}`;
-              const isSettled = settledMap[key];
+            {settlements.map((settle) => {
+              const fromMember = members.find((m) => m.id === settle.fromMemberId);
+              const toMember = members.find((m) => m.id === settle.toMemberId);
 
               if (!fromMember || !toMember) return null;
 
               return (
                 <div
-                  key={idx}
-                  className={`p-3 rounded-2xl border transition-all ${
-                    isSettled
-                      ? 'bg-slate-950/50 border-slate-900 opacity-60'
-                      : 'bg-slate-950 border-slate-800 hover:border-slate-700 shadow-md'
-                  }`}
+                  key={`${settle.fromMemberId}_${settle.toMemberId}`}
+                  className="p-3 rounded-2xl border transition-all bg-slate-950 border-slate-800 hover:border-slate-700 shadow-md"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -251,25 +298,13 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {isSettled ? (
-                        <button
-                          onClick={() => handleToggleSettled(settle.fromMemberId, settle.toMemberId)}
-                          className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-emerald-400 text-xs font-bold flex items-center gap-1"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Đã trả</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => setSelectedSettlement(settle)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-slate-950 text-xs font-extrabold rounded-xl shadow-md transition"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                          <span>VietQR</span>
-                        </button>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => setSelectedSettlement(settle)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-slate-950 text-xs font-extrabold rounded-xl shadow-md transition shrink-0"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>VietQR</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -308,25 +343,61 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Payments History */}
+        {payments.length > 0 && (
+          <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-400">
+              Đã Ghi Nhận Thanh Toán ({payments.length}):
+            </div>
+            {payments.map((p) => (
+              <div
+                key={p.id}
+                className="p-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 text-[11px]"
+              >
+                <div className="min-w-0">
+                  <div className="text-slate-300 truncate">
+                    <Check className="w-3 h-3 text-emerald-400 inline mr-1" />
+                    {memberName(p.fromMemberId)} ➔ {memberName(p.toMemberId)}:{' '}
+                    <span className="font-mono font-bold text-emerald-400">{formatVND(p.amount)}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    {memberName(p.createdBy)} ghi nhận lúc {formatDateTime(p.createdAt)}
+                  </div>
+                </div>
+                {canEdit && p.createdBy === currentUser.id && (
+                  <button
+                    onClick={() => handleUndoPayment(p)}
+                    className="px-2 py-1 rounded-lg text-[10px] text-slate-400 hover:text-red-400 border border-slate-800 shrink-0"
+                  >
+                    Hủy
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* SECTION 2: REALTIME EXPENSE LOG */}
       <div className="p-4 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-            Bảng Kê Chi Tiêu Lũy Kế ({trip.expenses.length} Khoản)
+            Bảng Kê Chi Tiêu Lũy Kế ({expenses.length} Khoản)
           </h3>
           <span className="text-[10px] text-slate-400">Thời gian thực</span>
         </div>
 
-        {trip.expenses.length === 0 ? (
+        {expenses.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-400 bg-slate-950 rounded-2xl border border-slate-800">
-            Chưa có khoản chi nào được ghi nhận. Bấm "+ Ghi Khoản Chi" để bắt đầu!
+            {canEdit
+              ? 'Chưa có khoản chi nào được ghi nhận. Bấm "+ Ghi Khoản Chi" để bắt đầu!'
+              : 'Chưa có khoản chi nào được ghi nhận.'}
           </div>
         ) : (
           <div className="space-y-2">
-            {trip.expenses.map((exp) => {
-              const payer = trip.members.find((m) => m.id === exp.paidById);
+            {expenses.map((exp) => {
+              const isOwner = canEdit && exp.createdBy === currentUser.id;
 
               return (
                 <div
@@ -340,29 +411,40 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                     <div className="min-w-0">
                       <div className="font-bold text-white text-xs truncate">{exp.title}</div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-                        <span>{payer ? payer.name : 'Ẩn danh'} trả</span>
+                        <span>{memberName(exp.paidById)} trả</span>
                         <span>•</span>
                         <span>Chia {exp.splitWithIds.length} người</span>
-                        {exp.note && <span>• {exp.note}</span>}
+                        {exp.note && <span className="truncate">• {exp.note}</span>}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <div className="text-right">
                       <div className="font-mono text-xs font-bold text-emerald-400">
                         {formatVND(exp.amount)}
                       </div>
-                      <div className="text-[10px] text-slate-500">{exp.date}</div>
+                      <div className="text-[10px] text-slate-500">{formatDateTime(exp.createdAt)}</div>
                     </div>
 
-                    <button
-                      onClick={() => onDeleteExpense(exp.id)}
-                      className="p-1.5 text-slate-500 hover:text-red-400 transition"
-                      title="Xóa khoản chi"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isOwner && (
+                      <>
+                        <button
+                          onClick={() => handleOpenEditModal(exp)}
+                          className="p-1.5 text-slate-500 hover:text-orange-400 transition"
+                          title="Sửa khoản chi"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpense(exp)}
+                          className="p-1.5 text-slate-500 hover:text-red-400 transition"
+                          title="Xóa khoản chi"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -371,24 +453,26 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
         )}
       </div>
 
-      {/* Add Expense Modal */}
-      {isAddModalOpen && (
+      {/* Add / Edit Expense Modal */}
+      {editingExpenseId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
           <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-2xl max-h-[92vh] overflow-y-auto space-y-3 text-xs">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-bold text-white text-sm">Ghi Nhận Khoản Chi Mới</h3>
+                <h3 className="font-bold text-white text-sm">
+                  {editingExpenseId ? 'Sửa Khoản Chi' : 'Ghi Nhận Khoản Chi Mới'}
+                </h3>
               </div>
               <button
-                onClick={() => setIsAddModalOpen(false)}
+                onClick={() => setEditingExpenseId(null)}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateExpense} className="space-y-3">
+            <form onSubmit={handleSaveExpense} className="space-y-3">
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">Tên khoản chi:</label>
                 <input
@@ -407,6 +491,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                 </label>
                 <input
                   type="number"
+                  min={1000}
                   step="1000"
                   value={amount}
                   onChange={(e) => setAmount(Number(e.target.value))}
@@ -422,7 +507,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                       onClick={() => setAmount(quick)}
                       className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-[10px]"
                     >
-                      +{quick / 1000}k
+                      {quick / 1000}k
                     </button>
                   ))}
                 </div>
@@ -452,7 +537,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                     onChange={(e) => setPaidById(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs"
                   >
-                    {activeMembers.map((m) => (
+                    {payerOptions.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name}
                       </option>
@@ -545,7 +630,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                     </div>
 
                     <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-2 rounded-xl border border-slate-800 max-h-36 overflow-y-auto">
-                      {trip.members.map((m) => {
+                      {members.map((m) => {
                         const isLeft = m.status === 'left';
                         const isChecked = splitWithIds.includes(m.id);
 
@@ -605,7 +690,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={() => setEditingExpenseId(null)}
                   className="flex-1 py-2 bg-slate-800 text-slate-300 font-bold rounded-xl"
                 >
                   Hủy
@@ -614,7 +699,7 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
                   type="submit"
                   className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold rounded-xl"
                 >
-                  Lưu Khoản Chi
+                  {editingExpenseId ? 'Lưu Thay Đổi' : 'Lưu Khoản Chi'}
                 </button>
               </div>
             </form>
@@ -625,13 +710,16 @@ export const ExpenseView: React.FC<ExpenseViewProps> = ({
       {/* Dynamic VietQR Modal */}
       {selectedSettlement && (
         <VietQRModal
-          isOpen={!!selectedSettlement}
           settlement={selectedSettlement}
-          fromMember={trip.members.find((m) => m.id === selectedSettlement.fromMemberId) || null}
-          toMember={trip.members.find((m) => m.id === selectedSettlement.toMemberId) || null}
+          fromMember={members.find((m) => m.id === selectedSettlement.fromMemberId) || null}
+          toMember={members.find((m) => m.id === selectedSettlement.toMemberId) || null}
           trip={trip}
+          canConfirm={
+            canEdit &&
+            (selectedSettlement.fromMemberId === currentUser.id || selectedSettlement.toMemberId === currentUser.id)
+          }
           onClose={() => setSelectedSettlement(null)}
-          onToggleSettled={handleToggleSettled}
+          onConfirmPaid={handleConfirmPaid}
         />
       )}
     </div>

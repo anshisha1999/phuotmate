@@ -5,23 +5,26 @@ import { formatVND } from '../../services/debtSimplifier';
 
 interface CompleteTripModalProps {
   isOpen: boolean;
-  trip: Trip | null;
+  trip: Trip;
+  activeMemberCount: number;
+  totalExpense: number;
+  unsettledDebtCount: number;
   onClose: () => void;
-  onConfirmComplete: (tripId: string) => void;
+  onConfirmComplete: () => void;
   onNavigateToExpenses?: () => void;
 }
 
 export const CompleteTripModal: React.FC<CompleteTripModalProps> = ({
   isOpen,
   trip,
+  activeMemberCount,
+  totalExpense,
+  unsettledDebtCount,
   onClose,
   onConfirmComplete,
   onNavigateToExpenses,
 }) => {
-  if (!isOpen || !trip) return null;
-
-  const totalExpense = (trip.expenses || []).reduce((sum, e) => sum + (e.amount || 0), 0);
-  const activeMembers = (trip.members || []).filter((m) => m.status !== 'left');
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
@@ -63,9 +66,14 @@ export const CompleteTripModal: React.FC<CompleteTripModalProps> = ({
                 <strong>Đảm bảo chi phí đã được thanh toán:</strong> Hãy kiểm tra kỹ <strong>Sổ Quỹ</strong> để chắc chắn các khoản đổ xăng, ăn uống, phòng nghỉ chung đã được nhập đủ và các biker đã chuyển khoản giải quyết công nợ.
               </li>
               <li>
-                <strong>Bảo lưu dữ liệu:</strong> Sau khi hoàn thành, tour sẽ chuyển sang trạng thái kết thúc. Dữ liệu kỷ niệm, chi phí và lộ trình vẫn được lưu trữ nguyên vẹn để tất cả thành viên xem lại bất cứ lúc nào.
+                <strong>Khóa vĩnh viễn:</strong> Sau khi hoàn thành, tour bị khóa và <strong>không thể mở lại</strong>. Không ai được sửa lịch trình, ghi chi phí hay ghi nhận thanh toán nữa. Dữ liệu vẫn được lưu để các thành viên xem lại.
               </li>
             </ul>
+            {unsettledDebtCount > 0 && (
+              <div className="p-2 rounded-xl bg-red-500/15 border border-red-500/30 text-[11px] text-red-300 font-bold">
+                ⚠️ Còn {unsettledDebtCount} khoản nợ chưa ghi nhận thanh toán trong Sổ Quỹ.
+              </div>
+            )}
           </div>
 
           {/* Tour Quick Stats */}
@@ -76,7 +84,7 @@ export const CompleteTripModal: React.FC<CompleteTripModalProps> = ({
                 <span>Biker tham gia</span>
               </div>
               <div className="text-base font-black text-white">
-                {activeMembers.length} <span className="text-xs font-normal text-slate-400">/ {trip.members.length}</span>
+                {activeMemberCount} <span className="text-xs font-normal text-slate-400">/ {trip.memberIds.length}</span>
               </div>
             </div>
 
@@ -127,7 +135,7 @@ export const CompleteTripModal: React.FC<CompleteTripModalProps> = ({
           <button
             type="button"
             onClick={() => {
-              onConfirmComplete(trip.id);
+              onConfirmComplete();
               onClose();
             }}
             className="px-4 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-600 hover:to-emerald-600 active:scale-95 text-slate-950 shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5"

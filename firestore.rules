@@ -1,19 +1,211 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User profile documents
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function tripPath(tripId) {
+      return /databases/$(database)/documents/trips/$(tripId);
+    }
+
+    function tripAt(tripId) {
+      return get(tripPath(tripId));
+    }
+
+    // Trạng thái tour SAU khi batch hiện tại được áp dụng
+    function tripAfter(tripId) {
+      return getAfter(tripPath(tripId));
+    }
+
+    function memberAfter(tripId, userId) {
+      return getAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(userId));
+    }
+
+    // Đã từng tham gia tour -> được XEM
+    function isMember(trip) {
+      return signedIn() && request.auth.uid in trip.data.memberIds;
+    }
+
+    // Tour đang chạy + người dùng đang trong tour (chưa rời) -> được THAO TÁC
+    function canEditTrip(trip) {
+      return signedIn()
+        && trip.data.status == 'active'
+        && request.auth.uid in trip.data.activeMemberIds;
+    }
+
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    function profileKeys() {
+      return ['name', 'avatar', 'phone', 'vehicle', 'bankName', 'bankCode', 'accountNumber', 'accountName'];
+    }
+
+    // Hồ sơ cá nhân: chỉ chủ tài khoản đọc/ghi
     match /users/{userId} {
-      allow read, write: if true;
+      allow read, write: if signedIn() && request.auth.uid == userId;
     }
 
-    // Trips collection
+    // Mã mời -> tour. Chỉ cho đọc theo mã cụ thể (không liệt kê được)
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      // Chỉ tạo cùng lúc với tour mới của chính mình
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'active'
+        && tripAfter(request.resource.data.tripId).data.createdBy == request.auth.uid
+        && tripAfter(request.resource.data.tripId).data.inviteCode == code;
+      // Trưởng đoàn đóng mã khi hoàn thành tour
+      allow update: if signedIn()
+        && resource.data.createdBy == request.auth.uid
+        && onlyChanges(['status'])
+        && request.resource.data.status == 'completed';
+    }
+
     match /trips/{tripId} {
-      allow read, write: if true;
-    }
+      allow read: if isMember(resource);
 
-    // Default match-all rule for collaborative real-time synchronization
-    match /{document=**} {
-      allow read, write: if true;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.memberIds == [request.auth.uid]
+        && request.resource.data.activeMemberIds == [request.auth.uid];
+
+      // Tour đã hoàn thành: KHÔNG ai được sửa (không có mở lại)
+      allow update: if resource.data.status == 'active' && (
+        // Trưởng đoàn: sửa thông tin tour, áp lịch AI, xác nhận hoàn thành
+        (
+          canEditTrip(resource)
+          && resource.data.createdBy == request.auth.uid
+          && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['createdBy', 'inviteCode', 'memberIds', 'activeMemberIds', 'createdAt'])
+          && request.resource.data.status in ['active', 'completed']
+        )
+        // Thành viên đang trong tour: sửa thông tin chặng theo ngày
+        || (canEditTrip(resource) && onlyChanges(['dayInfo', 'updatedAt']))
+        // Tham gia / tham gia lại: chỉ thêm chính mình, kèm hồ sơ thành viên 'active' trong cùng batch
+        || (
+          signedIn()
+          && !(request.auth.uid in resource.data.activeMemberIds)
+          && onlyChanges(['memberIds', 'activeMemberIds', 'updatedAt'])
+          && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().union([request.auth.uid].toSet())
+          && request.resource.data.activeMemberIds.toSet() == resource.data.activeMemberIds.toSet().union([request.auth.uid].toSet())
+          && memberAfter(tripId, request.auth.uid).data.status == 'active'
+        )
+        // Thoát tour: chỉ thành viên (Trưởng đoàn không được thoát), kèm hồ sơ thành viên 'left' trong cùng batch
+        || (
+          canEditTrip(resource)
+          && resource.data.createdBy != request.auth.uid
+          && onlyChanges(['activeMemberIds', 'updatedAt'])
+          && request.resource.data.activeMemberIds.toSet() == resource.data.activeMemberIds.toSet().difference([request.auth.uid].toSet())
+          && memberAfter(tripId, request.auth.uid).data.status == 'left'
+        )
+      );
+
+      allow delete: if false;
+
+      // Hồ sơ thành viên. Mốc vào/rời tour do server ghi (== request.time) để không ai tự sửa công nợ
+      match /members/{memberId} {
+        allow read: if isMember(tripAt(tripId)) || (signedIn() && request.auth.uid == memberId);
+
+        // Vào tour lần đầu (hoặc Trưởng đoàn khi tạo tour) - phải có mã mời đúng
+        allow create: if signedIn()
+          && request.auth.uid == memberId
+          && tripAfter(tripId).data.status == 'active'
+          && memberId in tripAfter(tripId).data.activeMemberIds
+          && request.resource.data.keys().hasOnly(profileKeys().concat(['id', 'role', 'status', 'joinedAt', 'joinedWithCode', 'absences']))
+          && request.resource.data.id == memberId
+          && request.resource.data.status == 'active'
+          && request.resource.data.joinedAt == request.time
+          && request.resource.data.joinedWithCode == tripAfter(tripId).data.inviteCode
+          && request.resource.data.absences == {}
+          && (
+            request.resource.data.role == 'Thành viên (Rider)'
+            || (request.resource.data.role == 'Trưởng đoàn (Lead)' && tripAfter(tripId).data.createdBy == memberId)
+          );
+
+        allow update: if signedIn()
+          && request.auth.uid == memberId
+          && tripAfter(tripId).data.status == 'active'
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.role == resource.data.role
+          && (
+            // Cập nhật hồ sơ khi đang trong tour
+            (
+              resource.data.status == 'active'
+              && memberId in tripAt(tripId).data.activeMemberIds
+              && onlyChanges(profileKeys())
+            )
+            // Thoát tour
+            || (
+              resource.data.status == 'active'
+              && request.resource.data.status == 'left'
+              && request.resource.data.leftAt == request.time
+              && !(memberId in tripAfter(tripId).data.activeMemberIds)
+              && onlyChanges(['status', 'leftAt'])
+            )
+            // Tham gia lại: thêm đúng 1 khoảng vắng mặt [leftAt, bây giờ)
+            || (
+              resource.data.status == 'left'
+              && request.resource.data.status == 'active'
+              && memberId in tripAfter(tripId).data.activeMemberIds
+              && request.resource.data.joinedAt == request.time
+              && request.resource.data.joinedWithCode == tripAfter(tripId).data.inviteCode
+              && !('leftAt' in request.resource.data)
+              && request.resource.data.absences.diff(resource.data.absences).affectedKeys()
+                  .hasOnly([string(resource.data.leftAt.toMillis())])
+              && request.resource.data.absences[string(resource.data.leftAt.toMillis())]
+                  == {'from': resource.data.leftAt, 'to': request.time}
+              && onlyChanges(profileKeys().concat(['status', 'joinedAt', 'joinedWithCode', 'leftAt', 'absences']))
+            )
+          );
+
+        allow delete: if false;
+      }
+
+      // Thẻ lịch trình: mọi thành viên đang trong tour được thêm/sửa/xóa
+      match /cards/{cardId} {
+        allow read: if isMember(tripAt(tripId));
+        allow create: if canEditTrip(tripAt(tripId))
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if canEditTrip(tripAt(tripId))
+          && request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if canEditTrip(tripAt(tripId));
+      }
+
+      // Khoản chi: chỉ người tạo được sửa/xóa. createdAt do server ghi (mốc tính chi phí cho thành viên)
+      match /expenses/{expenseId} {
+        allow read: if isMember(tripAt(tripId));
+        allow create: if canEditTrip(tripAt(tripId))
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+        allow update: if canEditTrip(tripAt(tripId))
+          && resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+        allow delete: if canEditTrip(tripAt(tripId))
+          && resource.data.createdBy == request.auth.uid;
+      }
+
+      // Ghi nhận thanh toán: người trả hoặc người nhận ghi nhận; chỉ người ghi nhận được hủy
+      match /payments/{paymentId} {
+        allow read: if isMember(tripAt(tripId));
+        allow create: if canEditTrip(tripAt(tripId))
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && request.auth.uid in [request.resource.data.fromMemberId, request.resource.data.toMemberId]
+          && request.resource.data.fromMemberId != request.resource.data.toMemberId
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+        allow delete: if canEditTrip(tripAt(tripId))
+          && resource.data.createdBy == request.auth.uid;
+      }
     }
   }
 }
