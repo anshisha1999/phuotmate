@@ -7,10 +7,9 @@ interface AuthModalProps {
   currentUser: UserProfile;
   isOpen: boolean;
   onClose: () => void;
-  onUpdateProfile: (updated: UserProfile) => void;
+  onUpdateProfile: (updated: UserProfile) => Promise<void>;
   onResyncGoogle?: () => Promise<void>;
   onLogout: () => void;
-  onResetAllData?: () => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -20,7 +19,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onUpdateProfile,
   onResyncGoogle,
   onLogout,
-  onResetAllData,
 }) => {
   const [name, setName] = useState(currentUser.name || '');
   const [email, setEmail] = useState(currentUser.email || '');
@@ -62,7 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const selectedBank = VIETNAM_BANKS.find((b) => b.code === bankCode);
     const updated: UserProfile = {
@@ -77,7 +75,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       accountName: accountName.trim().toUpperCase(),
     };
 
-    onUpdateProfile(updated);
+    try {
+      await onUpdateProfile(updated);
+    } catch {
+      return; // lỗi đã được thông báo
+    }
     setSavedSuccess(true);
     setTimeout(() => {
       setSavedSuccess(false);
@@ -317,23 +319,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
               </button>
             </div>
-
-            {/* Clear cache / Reset option */}
-            {onResetAllData && (
-              <div className="pt-2 border-t border-slate-800/80 text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm('Khôi phục dữ liệu ban đầu và xóa toàn bộ Local Storage?')) {
-                      onResetAllData();
-                    }
-                  }}
-                  className="text-[11px] text-slate-500 hover:text-red-400 transition underline"
-                >
-                  Xóa sạch bộ nhớ tạm & Khôi phục dữ liệu gốc
-                </button>
-              </div>
-            )}
           </form>
         </div>
       </div>

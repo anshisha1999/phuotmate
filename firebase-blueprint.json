@@ -15,13 +15,24 @@
         "bankCode": { "type": "string" },
         "accountNumber": { "type": "string" },
         "accountName": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "updatedAt": { "type": "string" }
       },
       "required": ["id", "email", "name"]
     },
+    "InviteCode": {
+      "title": "Invite Code",
+      "description": "Mã mời 6 ký tự trỏ tới tour",
+      "type": "object",
+      "properties": {
+        "tripId": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] }
+      },
+      "required": ["tripId", "createdBy", "status"]
+    },
     "Trip": {
       "title": "Tour Phượt",
-      "description": "Chuyến đi phượt gồm lịch trình chặng, thành viên, và sổ quỹ",
+      "description": "Thông tin chung của tour. Thành viên, lịch trình, chi phí, thanh toán nằm ở subcollection",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -29,25 +40,92 @@
         "inviteCode": { "type": "string", "minLength": 6, "maxLength": 6 },
         "departure": { "type": "string" },
         "destination": { "type": "string" },
-        "startDate": { "type": "string" },
-        "endDate": { "type": "string" },
+        "startDate": { "type": "string", "description": "YYYY-MM-DD" },
+        "endDate": { "type": "string", "description": "YYYY-MM-DD" },
         "coverImage": { "type": "string" },
         "defaultVehicle": { "type": "string" },
         "vibe": { "type": "string" },
         "status": { "type": "string", "enum": ["active", "completed"] },
-        "createdBy": { "type": "string" },
+        "createdBy": { "type": "string", "description": "Trưởng đoàn (Lead)" },
         "createdByName": { "type": "string" },
+        "createdAt": { "type": "string" },
         "completedAt": { "type": "string" },
-        "memberIds": { "type": "array" },
-        "members": { "type": "array" },
-        "days": { "type": "array" },
-        "expenses": { "type": "array" },
-        "photos": { "type": "array" },
+        "memberIds": { "type": "array", "description": "Tất cả người đã từng tham gia (được xem)" },
+        "activeMemberIds": { "type": "array", "description": "Người đang trong tour (được thao tác)" },
+        "dayInfo": { "type": "object", "description": "Map YYYY-MM-DD -> { routeTitle, totalKm }" },
         "gearChecklist": { "type": "array" },
         "vehicleAdvice": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "inviteCode", "createdBy", "status", "memberIds", "activeMemberIds"]
+    },
+    "Member": {
+      "title": "Trip Member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["Trưởng đoàn (Lead)", "Thành viên (Rider)"] },
+        "vehicle": { "type": "string" },
+        "bankName": { "type": "string" },
+        "bankCode": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "accountName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "left"] },
+        "joinedAt": { "type": "string" },
+        "leftAt": { "type": "string" },
+        "absences": { "type": "array", "description": "Các khoảng { from, to } đã rời rồi vào lại" }
+      },
+      "required": ["id", "name", "role", "status", "joinedAt"]
+    },
+    "ItineraryCard": {
+      "title": "Itinerary Card",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "YYYY-MM-DD" },
+        "order": { "type": "number" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "routeNote": { "type": "string" },
+        "gasStationAlert": { "type": "string" },
+        "safetyWarning": { "type": "string" },
+        "category": { "type": "string", "enum": ["departure", "ride", "sight", "food", "fuel", "camp", "stay"] },
+        "isCompleted": { "type": "boolean" },
+        "createdBy": { "type": "string" },
         "createdAt": { "type": "string" }
       },
-      "required": ["id", "title", "inviteCode", "createdBy", "status"]
+      "required": ["date", "order", "title", "category", "createdBy"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "paidById": { "type": "string" },
+        "splitWithIds": { "type": "array" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdBy": { "type": "string", "description": "Chỉ người tạo được sửa/xóa" }
+      },
+      "required": ["title", "amount", "paidById", "splitWithIds", "createdAt", "createdBy"]
+    },
+    "Payment": {
+      "title": "Debt Payment",
+      "type": "object",
+      "properties": {
+        "fromMemberId": { "type": "string" },
+        "toMemberId": { "type": "string" },
+        "amount": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fromMemberId", "toMemberId", "amount", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -55,9 +133,29 @@
       "schema": { "$ref": "#/entities/User" },
       "description": "Tài khoản người dùng cá nhân"
     },
+    "/inviteCodes/{code}": {
+      "schema": { "$ref": "#/entities/InviteCode" },
+      "description": "Mã mời tham gia tour"
+    },
     "/trips/{tripId}": {
       "schema": { "$ref": "#/entities/Trip" },
-      "description": "Danh sách các chuyến đi phượt và chia tiền"
+      "description": "Danh sách các chuyến đi phượt"
+    },
+    "/trips/{tripId}/members/{userId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Thành viên của tour"
+    },
+    "/trips/{tripId}/cards/{cardId}": {
+      "schema": { "$ref": "#/entities/ItineraryCard" },
+      "description": "Thẻ lịch trình gắn với ngày"
+    },
+    "/trips/{tripId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Khoản chi của tour"
+    },
+    "/trips/{tripId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Ghi nhận thanh toán công nợ"
     }
   }
 }

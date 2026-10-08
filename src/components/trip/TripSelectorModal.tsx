@@ -1,39 +1,33 @@
 import React, { useState } from 'react';
-import { Trip, VehicleType } from '../../types/trip';
-import { X, Plus, LogIn, MapPin, Calendar, Check, Bike, Sparkles } from 'lucide-react';
+import { Trip } from '../../types/trip';
+import type { ActionResult } from '../../App';
+import { X, Plus, LogIn, MapPin, Check } from 'lucide-react';
 
 interface TripSelectorModalProps {
   trips: Trip[];
   currentTripId: string;
+  currentUserId: string;
   isOpen: boolean;
   onClose: () => void;
   onSelectTrip: (tripId: string) => void;
-  onCreateTrip: (newTrip: Partial<Trip>) => void;
-  onJoinTripByCode: (code: string) => boolean | Promise<{ success: boolean; message?: string } | boolean>;
+  onOpenCreateTrip: () => void;
+  onJoinTripByCode: (code: string) => Promise<ActionResult>;
 }
 
 export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
   trips,
   currentTripId,
+  currentUserId,
   isOpen,
   onClose,
   onSelectTrip,
-  onCreateTrip,
+  onOpenCreateTrip,
   onJoinTripByCode,
 }) => {
-  const [mode, setMode] = useState<'list' | 'create' | 'join'>('list');
+  const [mode, setMode] = useState<'list' | 'join'>('list');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joinError, setJoinError] = useState('');
-
-  // New trip form state
-  const [title, setTitle] = useState('');
-  const [departure, setDeparture] = useState('Hà Nội');
-  const [destination, setDestination] = useState('Mã Pí Lèng, Hà Giang');
-  const [startDate, setStartDate] = useState('2026-10-20');
-  const [endDate, setEndDate] = useState('2026-10-23');
-  const [vehicle, setVehicle] = useState<VehicleType>('Côn tay (Winner X, Exciter, Raider)');
-  const [vibe, setVibe] = useState('Chinh phục đèo dốc & Săn mây');
-  const [coverImage, setCoverImage] = useState('https://images.unsplash.com/photo-1528127269322-539801943592?auto=format&fit=crop&w=1200&q=80');
+  const [isJoining, setIsJoining] = useState(false);
 
   if (!isOpen) return null;
 
@@ -41,46 +35,26 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
     e.preventDefault();
     setJoinError('');
     const clean = joinCodeInput.trim().toUpperCase();
-    if (clean.length < 4) {
-      setJoinError('Mã mời tối thiểu 6 ký tự');
+    if (clean.length !== 6) {
+      setJoinError('Mã mời gồm 6 ký tự');
       return;
     }
-    try {
-      const res = await onJoinTripByCode(clean);
-      if (typeof res === 'object' && res !== null) {
-        if (!res.success) {
-          setJoinError(res.message || 'Không tìm thấy chuyến đi với mã này hoặc bạn đã tham gia');
-          return;
-        }
-      } else if (!res) {
-        setJoinError('Không tìm thấy chuyến đi với mã này hoặc bạn đã tham gia');
-        return;
-      }
-      setMode('list');
-      onClose();
-    } catch (err: any) {
-      setJoinError(err?.message || 'Có lỗi xảy ra khi tham gia chuyến đi');
+    setIsJoining(true);
+    const res = await onJoinTripByCode(clean);
+    setIsJoining(false);
+    if (!res.success) {
+      setJoinError(res.message || 'Không tìm thấy chuyến đi với mã này');
+      return;
     }
-  };
-
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    onCreateTrip({
-      title: title.trim(),
-      departure: departure.trim(),
-      destination: destination.trim(),
-      startDate,
-      endDate,
-      defaultVehicle: vehicle,
-      vibe,
-      coverImage: coverImage || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
-    });
-
-    setTitle('');
+    setJoinCodeInput('');
     setMode('list');
     onClose();
+  };
+
+  const getStatusLabel = (trip: Trip) => {
+    if (trip.status === 'completed') return { text: 'Đã hoàn thành', color: 'text-blue-400' };
+    if (!trip.activeMemberIds.includes(currentUserId)) return { text: 'Đã rời tour', color: 'text-rose-400' };
+    return { text: 'Đang diễn ra', color: 'text-emerald-400' };
   };
 
   return (
@@ -90,14 +64,10 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
         <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
           <div>
             <h3 className="font-bold text-white text-base">
-              {mode === 'list' && 'Chuyến Đi Của Bạn'}
-              {mode === 'create' && 'Tạo Chuyến Đi Mới'}
-              {mode === 'join' && 'Tham Gia Bằng Mã Mời'}
+              {mode === 'list' ? 'Chuyến Đi Của Bạn' : 'Tham Gia Bằng Mã Mời'}
             </h3>
             <p className="text-xs text-slate-400">
-              {mode === 'list' && 'Chọn tour để xem lịch trình & chia tiền'}
-              {mode === 'create' && 'Lên tour phượt cùng bạn đồng hành'}
-              {mode === 'join' && 'Nhập mã 6 ký tự từ trưởng đoàn'}
+              {mode === 'list' ? 'Chọn tour để xem lịch trình & chia tiền' : 'Nhập mã 6 ký tự từ trưởng đoàn'}
             </p>
           </div>
           <button
@@ -115,7 +85,10 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
               {/* Action buttons */}
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <button
-                  onClick={() => setMode('create')}
+                  onClick={() => {
+                    onClose();
+                    onOpenCreateTrip();
+                  }}
                   className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md transition active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
@@ -142,6 +115,7 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
                 ) : (
                   trips.map((trip) => {
                     const isCurrent = trip.id === currentTripId;
+                    const status = getStatusLabel(trip);
                     return (
                       <div
                         key={trip.id}
@@ -181,7 +155,7 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
                                 {trip.destination}
                               </span>
                               <span>•</span>
-                              <span>{trip.members.length} Biker</span>
+                              <span className={status.color}>{status.text}</span>
                             </div>
                           </div>
                         </div>
@@ -211,9 +185,6 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
                 {joinError && (
                   <p className="text-xs text-red-400 mt-2 font-medium">{joinError}</p>
                 )}
-                <div className="mt-3 text-xs text-slate-500">
-                  Thử các mã mẫu: <span className="font-mono text-slate-400">HG8824</span> (Hà Giang), <span className="font-mono text-slate-400">TX6991</span> (Tà Xùa)
-                </div>
               </div>
 
               <div className="flex gap-2">
@@ -226,125 +197,10 @@ export const TripSelectorModal: React.FC<TripSelectorModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-lg"
+                  disabled={isJoining}
+                  className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-lg disabled:opacity-50"
                 >
                   Vào chuyến đi
-                </button>
-              </div>
-            </form>
-          )}
-
-          {mode === 'create' && (
-            <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Tên tour phượt:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Vd: Y Tý Mùa Lúa Chín & Săn Mây"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Điểm xuất phát:
-                  </label>
-                  <input
-                    type="text"
-                    value={departure}
-                    onChange={(e) => setDeparture(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Điểm đến chính:
-                  </label>
-                  <input
-                    type="text"
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Ngày đi:
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Ngày về:
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Dòng xe máy chủ đạo:
-                </label>
-                <select
-                  value={vehicle}
-                  onChange={(e) => setVehicle(e.target.value as VehicleType)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                >
-                  <option value="Xe số (Wave, Future, Sirius)">Xe số (Wave, Future, Sirius)</option>
-                  <option value="Côn tay (Winner X, Exciter, Raider)">Côn tay (Winner X, Exciter, Raider)</option>
-                  <option value="Cào cào / Dual-Sport (CRF, XR, WR)">Cào cào / Dual-Sport (CRF, XR, WR)</option>
-                  <option value="Phân khối lớn ADV / Touring (CB500X, GS)">Phân khối lớn ADV / Touring (CB500X, GS)</option>
-                  <option value="Xe ga (AirBlade, NVX, SH)">Xe ga (AirBlade, NVX, SH)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Phong cách chuyến đi:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Vd: Săn mây, Camping ven suối, Thử thách đèo dốc..."
-                  value={vibe}
-                  onChange={(e) => setVibe(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setMode('list')}
-                  className="flex-1 py-2.5 bg-slate-800 text-slate-300 font-bold text-xs rounded-xl hover:bg-slate-700"
-                >
-                  Quay lại
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-lg"
-                >
-                  Tạo & Lưu Tour
                 </button>
               </div>
             </form>

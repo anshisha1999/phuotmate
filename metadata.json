@@ -1,6 +1,6 @@
 {
   "name": "PhượtMate - Trợ Lý & Sổ Phượt AI",
-  "description": "Ứng dụng phượt di động chuẩn Store: Lên lịch trình AI, quản lý đoàn, nhật ký Reels tự động từ ảnh & chia tiền nhóm thông minh VietQR.",
+  "description": "Ứng dụng phượt di động chuẩn Store: Lên lịch trình AI, quản lý đoàn & chia tiền nhóm thông minh VietQR.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

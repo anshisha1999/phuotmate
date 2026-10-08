@@ -1,4 +1,4 @@
-import { Member, Expense, DebtSettlement } from '../types/trip';
+import { Member, Expense, DebtSettlement, Payment } from '../types/trip';
 
 export interface MemberBalance {
   memberId: string;
@@ -8,11 +8,25 @@ export interface MemberBalance {
   netBalance: number; // positive = creditor, negative = debtor
 }
 
+/** Thành viên có vắng mặt tại thời điểm này không (đang rời tour, hoặc trong khoảng đã rời rồi vào lại) */
+function isAbsentAt(member: Member, time: number): boolean {
+  if (member.status === 'left' && member.leftAt) {
+    const leftTime = new Date(member.leftAt).getTime();
+    if (!isNaN(leftTime) && leftTime <= time) return true;
+  }
+  return (member.absences || []).some((a) => {
+    const from = new Date(a.from).getTime();
+    const to = new Date(a.to).getTime();
+    return from <= time && time < to;
+  });
+}
+
 /**
  * Thuật toán bù trừ nợ tối giản (Debt Simplification - Splitwise Greedy Algorithm)
  * Chuyển đổi ma trận nợ N-bên thành tối đa N-1 giao dịch chuyển khoản trực tiếp.
+ * Các khoản đã thanh toán (payments) được trừ vào công nợ.
  */
-export function calculateBalancesAndDebts(members: Member[], expenses: Expense[]): {
+export function calculateBalancesAndDebts(members: Member[], expenses: Expense[], payments: Payment[] = []): {
   balances: Record<string, MemberBalance>;
   settlements: DebtSettlement[];
   totalTripExpense: number;
@@ -41,27 +55,19 @@ export function calculateBalancesAndDebts(members: Member[], expenses: Expense[]
     }
 
     // Thời điểm phát sinh khoản chi
-    const expTime = exp.createdAt 
-      ? new Date(exp.createdAt).getTime() 
-      : (exp.date ? new Date(exp.date).getTime() : 0);
+    const expTime = new Date(exp.createdAt).getTime();
 
     // Lọc những thành viên hợp lệ cùng chia chi phí:
-    // Biker đã thoát tour trước thời điểm khoản chi phát sinh sẽ KHÔNG bị tính chi phí này
+    // Biker vắng mặt (đã thoát tour) tại thời điểm khoản chi phát sinh sẽ KHÔNG bị tính chi phí này
     const validSplitIds = exp.splitWithIds.filter(id => {
       const member = members.find(m => m.id === id);
       if (!member) return false;
-      if (member.leftAt && expTime > 0) {
-        const leftTime = new Date(member.leftAt).getTime();
-        if (!isNaN(leftTime) && leftTime <= expTime) {
-          return false; // Đã thoát tour trước hoặc tại thời điểm này -> Miễn trừ chi phí
-        }
-      }
-      return true;
+      return isNaN(expTime) || !isAbsentAt(member, expTime);
     });
 
     // Nếu tất cả người chia đều đã thoát tour, mặc định tính cho người trả
-    const finalSplitIds = validSplitIds.length > 0 
-      ? validSplitIds 
+    const finalSplitIds = validSplitIds.length > 0
+      ? validSplitIds
       : (balances[exp.paidById] ? [exp.paidById] : []);
 
     const splitCount = finalSplitIds.length;
@@ -75,6 +81,12 @@ export function calculateBalancesAndDebts(members: Member[], expenses: Expense[]
     }
   });
 
+  // Khoản đã chuyển khoản: người trả nợ được cộng, người nhận bị trừ
+  payments.forEach(p => {
+    if (balances[p.fromMemberId]) balances[p.fromMemberId].totalPaid += p.amount;
+    if (balances[p.toMemberId]) balances[p.toMemberId].totalShare += p.amount;
+  });
+
   // Tính Net Balance
   members.forEach(m => {
     balances[m.id].netBalance = balances[m.id].totalPaid - balances[m.id].totalShare;
@@ -85,7 +97,6 @@ export function calculateBalancesAndDebts(members: Member[], expenses: Expense[]
   const debtors: { memberId: string; amount: number }[] = [];
 
   Object.values(balances).forEach(b => {
-    // Làm tròn đến 1000 đồng để tránh số lẻ hàng đồng
     const rounded = Math.round(b.netBalance);
     if (rounded > 500) {
       creditors.push({ memberId: b.memberId, amount: rounded });
@@ -114,7 +125,6 @@ export function calculateBalancesAndDebts(members: Member[], expenses: Expense[]
         fromMemberId: debtor.memberId,
         toMemberId: creditor.memberId,
         amount: settleAmount,
-        isSettled: false,
       });
     }
 
